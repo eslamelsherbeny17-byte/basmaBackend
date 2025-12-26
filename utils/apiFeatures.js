@@ -5,20 +5,23 @@ class ApiFeatures {
     this.queryString = queryString
   }
 
-  filter() {
-    const queryStringObj = { ...this.queryString }
-    const excludesFields = ['page', 'sort', 'limit', 'fields', 'keyword']
-    excludesFields.forEach((field) => delete queryStringObj[field])
+ filter() {
+  const queryStringObj = { ...this.queryString };
+  const excludesFields = ['page', 'sort', 'limit', 'fields', 'keyword'];
+  excludesFields.forEach((field) => delete queryStringObj[field]);
 
-    // Apply filtration using [gte, gt, lte, lt]
-    let queryStr = JSON.stringify(queryStringObj)
-    queryStr = queryStr.replace(/\b(gte|gt|lte|lt)\b/g, (match) => `$${match}`)
+  // 1) تحويل gte, gt إلى $gte, $gt
+  let queryStr = JSON.stringify(queryStringObj);
+  queryStr = queryStr.replace(/\b(gte|gt|lte|lt)\b/g, (match) => `$${match}`);
 
-    this.mongooseQuery = this.mongooseQuery.find(JSON.parse(queryStr))
+  // ✅ 2) التعديل الجديد: استبدال مفتاح price بمفتاح finalPrice في البحث
+  // هذا سيحول {"price": {"$gte": 100}} إلى {"finalPrice": {"$gte": 100}}
+  queryStr = queryStr.replace(/\bprice\b/g, 'finalPrice');
 
-    return this
-  }
+  this.mongooseQuery = this.mongooseQuery.find(JSON.parse(queryStr));
 
+  return this;
+}
   // ✅ تعديل: معالجة الترتيب بالسعر بشكل احترافي
   sort() {
     if (this.queryString.sort) {
