@@ -1,3 +1,4 @@
+// models/productModel.js
 const mongoose = require('mongoose')
 
 const productSchema = new mongoose.Schema(
@@ -36,15 +37,16 @@ const productSchema = new mongoose.Schema(
     priceAfterDiscount: {
       type: Number,
     },
-
+    // ✅ إضافة حقل محسوب للسعر الفعلي
+    finalPrice: {
+      type: Number,
+    },
     colors: {
       type: [String],
     },
-
     sizes: {
       type: [String],
     },
-
     imageCover: {
       type: String,
       required: [true, 'Product Image cover is required'],
@@ -82,6 +84,21 @@ const productSchema = new mongoose.Schema(
   }
 )
 
+// ✅ Middleware: حساب السعر النهائي قبل الحفظ
+productSchema.pre('save', function (next) {
+  this.finalPrice = this.priceAfterDiscount || this.price
+  next()
+})
+
+// ✅ Middleware: تحديث السعر النهائي عند التعديل
+productSchema.pre('findOneAndUpdate', function (next) {
+  const update = this.getUpdate()
+  if (update.price || update.priceAfterDiscount !== undefined) {
+    update.finalPrice = update.priceAfterDiscount || update.price
+  }
+  next()
+})
+
 productSchema.virtual('reviews', {
   ref: 'Review',
   foreignField: 'product',
@@ -92,28 +109,23 @@ productSchema.virtual('reviews', {
 productSchema.pre(/^find/, function (next) {
   this.populate({
     path: 'category',
-    select: 'name', // ⚠️ شلنا -_id عشان الأدمن يحتاج الآيدي
+    select: 'name',
   }).populate({
-    path: 'subcategories', // ✅ عشان نعرض الفئات الفرعية للعميل
+    path: 'subcategories',
     select: 'name',
   })
 
   next()
 })
 
-// ✅ التعديل هنا: دالة ذكية للتعامل مع الصور المحلية وروابط Cloudinary
 const setImageURL = (doc) => {
-  // 1. معالجة صورة الغلاف
   if (doc.imageCover) {
-    // لو الرابط مش بيبدأ بـ http (يعني اسم ملف محلي)، ضيف الدومين
     if (!doc.imageCover.startsWith('http')) {
       const imageUrl = `${process.env.BASE_URL}/products/${doc.imageCover}`
       doc.imageCover = imageUrl
     }
-    // لو بيبدأ بـ http (زي Cloudinary)، سيبه زي ما هو
   }
 
-  // 2. معالجة صور المعرض
   if (doc.images) {
     const imagesList = []
     doc.images.forEach((image) => {
@@ -128,12 +140,10 @@ const setImageURL = (doc) => {
   }
 }
 
-// findOne, findAll and update
 productSchema.post('init', (doc) => {
   setImageURL(doc)
 })
 
-// create
 productSchema.post('save', (doc) => {
   setImageURL(doc)
 })
