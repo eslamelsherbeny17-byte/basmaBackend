@@ -16,6 +16,10 @@ const categorySchema = new mongoose.Schema(
       lowercase: true,
     },
     image: String,
+    showOnHomePage: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 )
