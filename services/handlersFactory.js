@@ -65,7 +65,7 @@ exports.getOne = (Model, populationOpt) =>
       .json({ status: 200, messsage: ' getted successfully', data: document })
   })
 
-xports.getAll = (Model, modelName = '') =>
+exports.getAll = (Model, modelName = '') =>
   asyncHandler(async (req, res) => {
     let filter = {}
     
