@@ -5,26 +5,23 @@ const ApiFeatures = require('../utils/apiFeatures')
 
 exports.getAll = (Model, modelName = '') =>
   asyncHandler(async (req, res) => {
-    let filter = {}
-    if (req.filterObj) { filter = req.filterObj }
-    if (req.params.categoryId) { filter = { category: req.params.categoryId } }
+    let filter = {};
+    if (req.filterObj) { filter = req.filterObj; }
+    if (req.params.categoryId) { filter = { category: req.params.categoryId }; }
 
-    // 1) الخطوة الأولى: حساب عدد المنتجات المفلترة فقط
-    // نطبق الفلترة والبحث أولاً لنعرف "كم منتجاً سيظهر فعلياً"
+    // 1) حساب العدد الحقيقي بناءً على الفلاتر المدخلة (لحل مشكلة الصفحات الزائدة)
     const countFeatures = new ApiFeatures(Model.find(filter), req.query)
       .filter()
       .search(modelName);
-    
-    // هذا السطر هو الذي سيحل مشكلة الـ 8 صفحات (سيعطيك 10 بدلاً من 90)
     const documentsCounts = await countFeatures.mongooseQuery.countDocuments();
 
-    // 2) الخطوة الثانية: جلب البيانات الفعلية بالترتيب الصحيح
+    // 2) جلب البيانات الفعلية
     const apiFeatures = new ApiFeatures(Model.find(filter), req.query)
-      .filter()      // 1. فلترة
-      .search(modelName) // 2. بحث
-      .sort()        // 3. ترتيب (Flash sale سيظهر هنا)
-      .limitFields() 
-      .paginate(documentsCounts); // 4. تقسيم (الآن الحسبة دقيقة)
+      .filter()
+      .search(modelName)
+      .sort()
+      .limitFields()
+      .paginate(documentsCounts);
 
     const { mongooseQuery, paginationResult } = apiFeatures;
     const documents = await mongooseQuery;
@@ -36,7 +33,6 @@ exports.getAll = (Model, modelName = '') =>
       data: documents,
     });
   });
-
 // الدوال الأخرى (deleteOne, updateOne, createOne, getOne) تبقى كما هي في كودك الأصلي
 exports.deleteOne = (Model) =>
   asyncHandler(async (req, res, next) => {

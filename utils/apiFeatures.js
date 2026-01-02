@@ -7,26 +7,22 @@ class ApiFeatures {
 
   filter() {
     const queryStringObj = { ...this.queryString };
-    const excludesFields = ['page', 'sort', 'limit', 'fields', 'keyword'];
+    // ✅ أضفنا isDiscounted لقائمة الاستبعاد لكي لا يبحث عنها كحقل نصي
+    const excludesFields = ['page', 'sort', 'limit', 'fields', 'keyword', 'isDiscounted'];
     excludesFields.forEach((field) => delete queryStringObj[field]);
 
-    // تحويل gte, gt إلى $gte, $gt
     let queryStr = JSON.stringify(queryStringObj);
     queryStr = queryStr.replace(/\b(gte|gt|lte|lt)\b/g, (match) => `$${match}`);
-
-    // ✅ تحويل سعر البحث إلى finalPrice
     queryStr = queryStr.replace(/\bprice\b/g, 'finalPrice');
 
     const finalFilters = JSON.parse(queryStr);
 
-    // ✅ إضافة منطق خاص للـ Flash Sale (المنتجات التي لديها خصم حقيقي)
-    // إذا أرسل الفرونت إند ?isDiscounted=true
+    // ✅ معالجة فلتر التخفيضات (Flash Sale)
     if (this.queryString.isDiscounted === 'true') {
-      finalFilters.priceAfterDiscount = { $gt: 0 };
-      // نستخدم $expr لمقارنة حقلين ببعضهما (السعر بعد الخصم أقل من السعر الأصلي)
       this.mongooseQuery = this.mongooseQuery.find({
+        ...finalFilters,
         $and: [
-          finalFilters,
+          { priceAfterDiscount: { $exists: true } },
           { $expr: { $lt: ["$priceAfterDiscount", "$price"] } }
         ]
       });
@@ -85,12 +81,9 @@ class ApiFeatures {
     pagination.limit = limit;
     pagination.numberOfPages = Math.ceil(countDocuments / limit);
 
-    if (endIndex < countDocuments) {
-      pagination.next = page + 1;
-    }
-    if (skip > 0) {
-      pagination.prev = page - 1;
-    }
+    if (endIndex < countDocuments) pagination.next = page + 1;
+    if (skip > 0) pagination.prev = page - 1;
+
     this.mongooseQuery = this.mongooseQuery.skip(skip).limit(limit);
     this.paginationResult = pagination;
     return this;
