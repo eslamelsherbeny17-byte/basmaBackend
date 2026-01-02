@@ -71,22 +71,24 @@ exports.getAll = (Model, modelName = '') =>
     if (req.filterObj) {
       filter = req.filterObj
     }
-    // Build query
-    const documentsCounts = await Model.countDocuments()
-    const apiFeatures = new ApiFeatures(Model.find(filter), req.query)
-      .paginate(documentsCounts)
-      .filter()
-      .search(modelName)
-      .limitFields()
-      .sort()
 
-    // Execute query
+    // 1) بناء الاستعلام (بدون تنفيذ)
+    const documentsCounts = await Model.countDocuments()
+    
+    // ✅ الترتيب الصحيح: الفلترة والبحث والترتيب أولاً، ثم التقسيم أخيراً
+    const apiFeatures = new ApiFeatures(Model.find(filter), req.query)
+      .filter()      // 1. فلترة (مثلاً حسب القسم)
+      .search(modelName) // 2. بحث (بالكلمة المفتاحية)
+      .sort()        // 3. ترتيب (هنا سيتم ترتيب الـ sold)
+      .limitFields() // 4. اختيار الحقول
+      .paginate(documentsCounts) // 5. التقسيم (هنا سيتم تطبيق limit: 4)
+
+    // 2) تنفيذ الاستعلام بعد بناء كل الخصائص
     const { mongooseQuery, paginationResult } = apiFeatures
     const documents = await mongooseQuery
 
     res.status(200).json({
       status: 200,
-      messsage: ' getted successfully',
       results: documents.length,
       paginationResult,
       data: documents,
