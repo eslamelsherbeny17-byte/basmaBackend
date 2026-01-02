@@ -65,32 +65,41 @@ exports.getOne = (Model, populationOpt) =>
       .json({ status: 200, messsage: ' getted successfully', data: document })
   })
 
-exports.getAll = (Model, modelName = '') =>
+xports.getAll = (Model, modelName = '') =>
   asyncHandler(async (req, res) => {
     let filter = {}
+    
+    // 1. تجميع الفلاتر (الأقسام المدمجة في الرابط)
     if (req.filterObj) {
       filter = req.filterObj
     }
-
-    // 1) بناء الاستعلام (بدون تنفيذ)
-    const documentsCounts = await Model.countDocuments()
     
-    // ✅ الترتيب الصحيح: الفلترة والبحث والترتيب أولاً، ثم التقسيم أخيراً
-    const apiFeatures = new ApiFeatures(Model.find(filter), req.query)
-      .filter()      // 1. فلترة (مثلاً حسب القسم)
-      .search(modelName) // 2. بحث (بالكلمة المفتاحية)
-      .sort()        // 3. ترتيب (هنا سيتم ترتيب الـ sold)
-      .limitFields() // 4. اختيار الحقول
-      .paginate(documentsCounts) // 5. التقسيم (هنا سيتم تطبيق limit: 4)
+    // 2. إذا كان هناك categoryId في الرابط (المسارات المتداخلة)
+    if (req.params.categoryId) {
+      filter = { category: req.params.categoryId };
+    }
 
-    // 2) تنفيذ الاستعلام بعد بناء كل الخصائص
+    // 💡 التعديل الجوهري: نمرر الـ filter داخل countDocuments
+    // لكي نعد فقط المنتجات التي تنتمي للقسم المختار
+    const documentsCounts = await Model.countDocuments(filter) 
+    
+    // 3. بناء الاستعلام باستخدام ApiFeatures
+    const apiFeatures = new ApiFeatures(Model.find(filter), req.query)
+      .filter()      // تفعيل الفلترة (Query Params)
+      .search(modelName) 
+      .sort()        
+      .limitFields() 
+      .paginate(documentsCounts) // الآن سيحسب الصفحات بناءً على الـ 10 منتجات فقط
+
+    // 4. تنفيذ الاستعلام
     const { mongooseQuery, paginationResult } = apiFeatures
     const documents = await mongooseQuery
 
     res.status(200).json({
       status: 200,
+      messsage: ' getted successfully',
       results: documents.length,
-      paginationResult,
+      paginationResult, // سيحتوي الآن على numberOfPages = 1
       data: documents,
     })
   })
