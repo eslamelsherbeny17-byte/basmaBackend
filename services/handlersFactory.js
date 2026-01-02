@@ -2,22 +2,56 @@ const asyncHandler = require('express-async-handler')
 const ApiError = require('../utils/apiError')
 const ApiFeatures = require('../utils/apiFeatures')
 
-// ✅ دالة الحذف المعدلة
+// ✅ دالة جلب الكل المصلحة تماماً
+exports.getAll = (Model, modelName = '') =>
+  asyncHandler(async (req, res) => {
+    let filter = {}
+    if (req.filterObj) {
+      filter = req.filterObj
+    }
+    
+    // لضمان عمل الأقسام المدمجة
+    if (req.params.categoryId) {
+      filter = { category: req.params.categoryId };
+    }
+
+    // الخطوة 1: بناء استعلام للفلترة فقط من أجل "عد" المنتجات الصحيحة
+    // نستخدم clone() لكي لا نؤثر على الاستعلام الأصلي
+    const countFeatures = new ApiFeatures(Model.find(filter), req.query)
+      .filter()
+      .search(modelName);
+    
+    // ✅ هنا نحصل على العدد الحقيقي للمنتجات داخل هذا القسم فقط (مثلاً 10)
+    const documentsCounts = await countFeatures.mongooseQuery.countDocuments();
+
+    // الخطوة 2: بناء الاستعلام النهائي للبيانات مع الترتيب الصحيح للعمليات
+    const apiFeatures = new ApiFeatures(Model.find(filter), req.query)
+      .filter()      // 1. فلترة أولاً
+      .search(modelName) // 2. بحث ثانياً
+      .sort()        // 3. ترتيب ثالثاً
+      .limitFields() // 4. اختيار الحقول رابعاً
+      .paginate(documentsCounts); // 5. تقسيم أخيراً بناءً على العدد الصحيح
+
+    // الخطوة 3: تنفيذ الاستعلام
+    const { mongooseQuery, paginationResult } = apiFeatures
+    const documents = await mongooseQuery
+
+    res.status(200).json({
+      status: 200,
+      results: documents.length,
+      paginationResult, // الآن numberOfPages سيكون 1 إذا كان عدد المنتجات 10
+      data: documents,
+    })
+  })
+
+// بقية الدوال (deleteOne, updateOne, createOne, getOne) تبقى كما هي
 exports.deleteOne = (Model) =>
   asyncHandler(async (req, res, next) => {
     const { id } = req.params
-
-    // 1. الحذف المباشر من قاعدة البيانات
     const document = await Model.findByIdAndDelete(id)
-
-    // 2. لو مفيش منتج بالرقم ده
     if (!document) {
       return next(new ApiError(`No document for this id ${id}`, 404))
     }
-
-    // ❌ تم حذف السطر المسبب للمشكلة: document.remove();
-
-    // 3. إرسال رد النجاح (204 No Content)
     res.status(204).send()
   })
 
@@ -26,80 +60,29 @@ exports.updateOne = (Model) =>
     const document = await Model.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
     })
-
     if (!document) {
       return next(new ApiError(`No document for this id ${req.params.id}`, 404))
     }
-    // Trigger "save" event when update document
     document.save()
-    res
-      .status(200)
-      .json({ status: 200, messsage: 'Updated successfully', data: document })
+    res.status(200).json({ status: 200, messsage: 'Updated successfully', data: document })
   })
 
 exports.createOne = (Model) =>
   asyncHandler(async (req, res) => {
     const newDoc = await Model.create(req.body)
-    res
-      .status(201)
-      .json({ status: 200, messsage: 'Created successfully', data: newDoc })
+    res.status(201).json({ status: 200, messsage: 'Created successfully', data: newDoc })
   })
 
 exports.getOne = (Model, populationOpt) =>
   asyncHandler(async (req, res, next) => {
     const { id } = req.params
-    // 1) Build query
     let query = Model.findById(id)
     if (populationOpt) {
       query = query.populate(populationOpt)
     }
-
-    // 2) Execute query
     const document = await query
-
     if (!document) {
       return next(new ApiError(`No document for this id ${id}`, 404))
     }
-    res
-      .status(200)
-      .json({ status: 200, messsage: ' getted successfully', data: document })
-  })
-
-exports.getAll = (Model, modelName = '') =>
-  asyncHandler(async (req, res) => {
-    let filter = {}
-    
-    // 1. تجميع الفلاتر (الأقسام المدمجة في الرابط)
-    if (req.filterObj) {
-      filter = req.filterObj
-    }
-    
-    // 2. إذا كان هناك categoryId في الرابط (المسارات المتداخلة)
-    if (req.params.categoryId) {
-      filter = { category: req.params.categoryId };
-    }
-
-    // 💡 التعديل الجوهري: نمرر الـ filter داخل countDocuments
-    // لكي نعد فقط المنتجات التي تنتمي للقسم المختار
-    const documentsCounts = await Model.countDocuments(filter) 
-    
-    // 3. بناء الاستعلام باستخدام ApiFeatures
-    const apiFeatures = new ApiFeatures(Model.find(filter), req.query)
-      .filter()      // تفعيل الفلترة (Query Params)
-      .search(modelName) 
-      .sort()        
-      .limitFields() 
-      .paginate(documentsCounts) // الآن سيحسب الصفحات بناءً على الـ 10 منتجات فقط
-
-    // 4. تنفيذ الاستعلام
-    const { mongooseQuery, paginationResult } = apiFeatures
-    const documents = await mongooseQuery
-
-    res.status(200).json({
-      status: 200,
-      messsage: ' getted successfully',
-      results: documents.length,
-      paginationResult, // سيحتوي الآن على numberOfPages = 1
-      data: documents,
-    })
+    res.status(200).json({ status: 200, messsage: ' getted successfully', data: document })
   })
