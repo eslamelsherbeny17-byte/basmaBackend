@@ -99,6 +99,9 @@ productSchema.pre('findOneAndUpdate', function (next) {
   next()
 })
 
+productSchema.virtual('id').get(function () {
+  return this._id.toHexString();
+});
 productSchema.virtual('reviews', {
   ref: 'Review',
   foreignField: 'product',
@@ -139,9 +142,7 @@ const setImageURL = (doc) => {
     doc.images = imagesList
   }
 }
-productSchema.virtual('id').get(function () {
-  return this._id.toHexString();
-});
+
 
 productSchema.post('init', (doc) => {
   setImageURL(doc)
