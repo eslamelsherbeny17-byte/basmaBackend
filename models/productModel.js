@@ -99,9 +99,7 @@ productSchema.pre('findOneAndUpdate', function (next) {
   next()
 })
 
-productSchema.virtual('id').get(function () {
-  return this._id.toHexString();
-});
+
 productSchema.virtual('reviews', {
   ref: 'Review',
   foreignField: 'product',
