@@ -124,130 +124,72 @@ exports.allowedTo = (...roles) =>
 // @desc    Forgot password
 // @route   POST /api/v1/auth/forgotPassword
 // @access  Public
+// @desc    Forgot password
 exports.forgotPassword = asyncHandler(async (req, res, next) => {
-  // 1) Get user by email
   const user = await User.findOne({ email: req.body.email });
-  
   if (!user) {
-    return next(
-      new ApiError(
-        `لا يوجد حساب مسجل بهذا البريد الإلكتروني. يرجى التحقق من البريد أو إنشاء حساب جديد.`,
-        404
-      )
-    );
+    return next(new ApiError("لا يوجد مستخدم بهذا البريد الإلكتروني", 404));
   }
 
-  // 2) Generate random 6 digits reset code
   const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-  const hashedResetCode = crypto
-    .createHash("sha256")
-    .update(resetCode)
-    .digest("hex");
+  const hashedResetCode = crypto.createHash("sha256").update(resetCode).digest("hex");
 
-  // 3) Save hashed reset code in database
   user.passwordResetCode = hashedResetCode;
   user.passwordResetExpires = Date.now() + 10 * 60 * 1000;
   user.passwordResetVerified = false;
   await user.save();
 
-  // 4) Send reset code via email
-  const message = `مرحباً ${user.name}،\n\nتلقينا طلباً لإعادة تعيين كلمة المرور الخاصة بحسابك في E-shop.\n\n${resetCode}\n\nأدخل هذا الرمز لإكمال إعادة تعيين كلمة المرور.\n\nالرمز صالح لمدة 10 دقائق فقط.\n\nشكراً لمساعدتنا في الحفاظ على أمان حسابك.\n\nفريق E-shop`;
-
   try {
-    const emailResult = await sendEmail({
+    await sendEmail({
       email: user.email,
-      subject: "رمز إعادة تعيين كلمة المرور (صالح لمدة 10 دقائق)",
-      message,
-    });
-
-    console.log(`✅ Reset code sent to: ${user.email}`);
-
-    res.status(200).json({
-      status: 200,
-      message: "تم إرسال رمز التحقق إلى بريدك الإلكتروني",
-      // في التطوير فقط - احذف في الإنتاج
-      ...(process.env.NODE_ENV === 'development' && { 
-        resetCode,
-        previewUrl: emailResult.previewUrl 
-      }),
+      subject: "رمز إعادة تعيين كلمة المرور",
+      message: `رمز التحقق الخاص بك هو: ${resetCode}`,
     });
   } catch (err) {
-    // If email sending fails, clean up database
     user.passwordResetCode = undefined;
     user.passwordResetExpires = undefined;
-    user.passwordResetVerified = undefined;
     await user.save();
-
-    console.error("❌ Email sending error:", err);
-    
-    return next(
-      new ApiError(
-        `عذراً، حدث خطأ أثناء إرسال رمز التحقق. يرجى المحاولة مرة أخرى لاحقاً.`,
-        500
-      )
-    );
+    return next(new ApiError("خطأ في إرسال الإيميل، حاول لاحقاً", 500));
   }
+
+  res.status(200).json({ status: "Success", message: "تم إرسال الرمز إلى الإيميل" });
 });
 // @desc    Verify password reset code
 // @route   POST /api/v1/auth/verifyResetCode
 // @access  Public
 exports.verifyPassResetCode = asyncHandler(async (req, res, next) => {
-  // 1) Get hashed reset code
-  const hashedResetCode = crypto
-    .createHash("sha256")
-    .update(req.body.resetCode)
-    .digest("hex");
+  const hashedResetCode = crypto.createHash("sha256").update(req.body.resetCode).digest("hex");
 
-  // 2) Find user with valid reset code
   const user = await User.findOne({
     passwordResetCode: hashedResetCode,
     passwordResetExpires: { $gt: Date.now() },
   });
 
   if (!user) {
-    return next(new ApiError("Reset code invalid or expired", 400));
+    return next(new ApiError("الرمز غير صحيح أو انتهت صلاحيته", 400));
   }
 
-  // 3) Mark reset code as verified
   user.passwordResetVerified = true;
   await user.save();
-
-  res.status(200).json({
-    status: 200,
-    message: "Reset code verified successfully",
-  });
+  res.status(200).json({ status: "Success" });
 });
-
 // @desc    Reset password
 // @route   PUT /api/v1/auth/resetPassword
 // @access  Public
 exports.resetPassword = asyncHandler(async (req, res, next) => {
-  // 1) Get user by email
   const user = await User.findOne({ email: req.body.email });
-  if (!user) {
-    return next(
-      new ApiError(`There is no user with email ${req.body.email}`, 404)
-    );
-  }
+  if (!user) return next(new ApiError("المستخدم غير موجود", 404));
 
-  // 2) Check if reset code was verified
   if (!user.passwordResetVerified) {
-    return next(new ApiError("Reset code not verified", 400));
+    return next(new ApiError("يجب التحقق من الرمز أولاً", 400));
   }
 
-  // 3) Update password
   user.password = req.body.newPassword;
   user.passwordResetCode = undefined;
   user.passwordResetExpires = undefined;
   user.passwordResetVerified = undefined;
   await user.save();
 
-  // 4) Generate new token
   const token = createToken(user._id);
-
-  res.status(200).json({
-    status: 200,
-    message: "Password reset successfully",
-    token,
-  });
+  res.status(200).json({ token });
 });
