@@ -1,17 +1,15 @@
+// services/authService.js
 const crypto = require("crypto");
-
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
-
 const asyncHandler = require("express-async-handler");
 const ApiError = require("../utils/apiError");
 const sendEmail = require("../utils/sendEmail");
 const createToken = require("../utils/createToken");
-
 const User = require("../models/userModel");
 
 // @desc    Signup
-// @route   GET /api/v1/auth/signup
+// @route   POST /api/v1/auth/signup
 // @access  Public
 exports.signup = asyncHandler(async (req, res, next) => {
   // 1- Create user
@@ -31,7 +29,7 @@ exports.signup = asyncHandler(async (req, res, next) => {
 });
 
 // @desc    Login
-// @route   GET /api/v1/auth/login
+// @route   POST /api/v1/auth/login
 // @access  Public
 exports.login = asyncHandler(async (req, res, next) => {
   // 1) check if password and email in the body (validation)
@@ -134,60 +132,67 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
       new ApiError(`There is no user with that email ${req.body.email}`, 404)
     );
   }
-  // 2) If user exist, Generate hash reset random 6 digits and save it in db
+
+  // 2) Generate random 6 digits reset code
   const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
   const hashedResetCode = crypto
     .createHash("sha256")
     .update(resetCode)
     .digest("hex");
 
-  // Save hashed password reset code into db
+  // 3) Save hashed reset code in database
   user.passwordResetCode = hashedResetCode;
-  // Add expiration time for password reset code (10 min)
-  user.passwordResetExpires = Date.now() + 10 * 60 * 1000;
+  user.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
   user.passwordResetVerified = false;
-
   await user.save();
 
-  // 3) Send the reset code via email
-  const message = `Hi ${user.name},\n We received a request to reset the password on your E-shop Account. \n ${resetCode} \n Enter this code to complete the reset. \n Thanks for helping us keep your account secure.\n The E-shop Team`;
+  // 4) Send reset code via email
+  const message = `مرحباً ${user.name}،\n\nتلقينا طلباً لإعادة تعيين كلمة المرور الخاصة بحسابك في E-shop.\n\n${resetCode}\n\nأدخل هذا الرمز لإكمال إعادة تعيين كلمة المرور.\n\nالرمز صالح لمدة 10 دقائق فقط.\n\nشكراً لمساعدتنا في الحفاظ على أمان حسابك.\n\nفريق E-shop`;
+
   try {
     await sendEmail({
       email: user.email,
-      subject: "Your password reset code (valid for 10 min)",
+      subject: "رمز إعادة تعيين كلمة المرور (صالح لمدة 10 دقائق)",
       message,
     });
+
+    res.status(200).json({
+      status: 200,
+      message: "Reset code sent to email",
+    });
   } catch (err) {
+    // If email sending fails, clean up database
     user.passwordResetCode = undefined;
     user.passwordResetExpires = undefined;
     user.passwordResetVerified = undefined;
-
     await user.save();
+
+    console.error("Email sending error:", err);
     return next(new ApiError("There is an error in sending email", 500));
   }
-
-  res.status(200).json({ status: 200, message: "Reset code sent to email" });
 });
 
 // @desc    Verify password reset code
 // @route   POST /api/v1/auth/verifyResetCode
 // @access  Public
 exports.verifyPassResetCode = asyncHandler(async (req, res, next) => {
-  // 1) Get user based on reset code
+  // 1) Get hashed reset code
   const hashedResetCode = crypto
     .createHash("sha256")
     .update(req.body.resetCode)
     .digest("hex");
 
+  // 2) Find user with valid reset code
   const user = await User.findOne({
     passwordResetCode: hashedResetCode,
     passwordResetExpires: { $gt: Date.now() },
   });
+
   if (!user) {
-    return next(new ApiError("Reset code invalid or expired"));
+    return next(new ApiError("Reset code invalid or expired", 400));
   }
 
-  // 2) Reset code valid
+  // 3) Mark reset code as verified
   user.passwordResetVerified = true;
   await user.save();
 
@@ -198,10 +203,10 @@ exports.verifyPassResetCode = asyncHandler(async (req, res, next) => {
 });
 
 // @desc    Reset password
-// @route   POST /api/v1/auth/resetPassword
+// @route   PUT /api/v1/auth/resetPassword
 // @access  Public
 exports.resetPassword = asyncHandler(async (req, res, next) => {
-  // 1) Get user based on email
+  // 1) Get user by email
   const user = await User.findOne({ email: req.body.email });
   if (!user) {
     return next(
@@ -209,23 +214,24 @@ exports.resetPassword = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // 2) Check if reset code verified
+  // 2) Check if reset code was verified
   if (!user.passwordResetVerified) {
     return next(new ApiError("Reset code not verified", 400));
   }
 
+  // 3) Update password
   user.password = req.body.newPassword;
   user.passwordResetCode = undefined;
   user.passwordResetExpires = undefined;
   user.passwordResetVerified = undefined;
-
   await user.save();
 
-  // 3) if everything is ok, generate token
+  // 4) Generate new token
   const token = createToken(user._id);
+
   res.status(200).json({
     status: 200,
-    token: token,
-    message: "password changed successfully",
+    message: "Password reset successfully",
+    token,
   });
 });
