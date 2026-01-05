@@ -127,9 +127,13 @@ exports.allowedTo = (...roles) =>
 exports.forgotPassword = asyncHandler(async (req, res, next) => {
   // 1) Get user by email
   const user = await User.findOne({ email: req.body.email });
+  
   if (!user) {
     return next(
-      new ApiError(`There is no user with that email ${req.body.email}`, 404)
+      new ApiError(
+        `لا يوجد حساب مسجل بهذا البريد الإلكتروني. يرجى التحقق من البريد أو إنشاء حساب جديد.`,
+        404
+      )
     );
   }
 
@@ -142,7 +146,7 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
 
   // 3) Save hashed reset code in database
   user.passwordResetCode = hashedResetCode;
-  user.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+  user.passwordResetExpires = Date.now() + 10 * 60 * 1000;
   user.passwordResetVerified = false;
   await user.save();
 
@@ -150,15 +154,22 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
   const message = `مرحباً ${user.name}،\n\nتلقينا طلباً لإعادة تعيين كلمة المرور الخاصة بحسابك في E-shop.\n\n${resetCode}\n\nأدخل هذا الرمز لإكمال إعادة تعيين كلمة المرور.\n\nالرمز صالح لمدة 10 دقائق فقط.\n\nشكراً لمساعدتنا في الحفاظ على أمان حسابك.\n\nفريق E-shop`;
 
   try {
-    await sendEmail({
+    const emailResult = await sendEmail({
       email: user.email,
       subject: "رمز إعادة تعيين كلمة المرور (صالح لمدة 10 دقائق)",
       message,
     });
 
+    console.log(`✅ Reset code sent to: ${user.email}`);
+
     res.status(200).json({
       status: 200,
-      message: "Reset code sent to email",
+      message: "تم إرسال رمز التحقق إلى بريدك الإلكتروني",
+      // في التطوير فقط - احذف في الإنتاج
+      ...(process.env.NODE_ENV === 'development' && { 
+        resetCode,
+        previewUrl: emailResult.previewUrl 
+      }),
     });
   } catch (err) {
     // If email sending fails, clean up database
@@ -167,11 +178,16 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
     user.passwordResetVerified = undefined;
     await user.save();
 
-    console.error("Email sending error:", err);
-    return next(new ApiError("There is an error in sending email", 500));
+    console.error("❌ Email sending error:", err);
+    
+    return next(
+      new ApiError(
+        `عذراً، حدث خطأ أثناء إرسال رمز التحقق. يرجى المحاولة مرة أخرى لاحقاً.`,
+        500
+      )
+    );
   }
 });
-
 // @desc    Verify password reset code
 // @route   POST /api/v1/auth/verifyResetCode
 // @access  Public

@@ -1,33 +1,26 @@
 // utils/sendEmail.js
-const { Resend } = require('resend');
-
-// Initialize Resend with API Key
-const resend = new Resend(process.env.RESEND_API_KEY);
+const nodemailer = require('nodemailer');
 
 /**
- * Send Email using Resend Service
- * @param {Object} options - Email configuration
- * @param {string} options.email - Recipient email address
- * @param {string} options.subject - Email subject
- * @param {string} options.message - Email text content
- * @param {string} [options.html] - Optional HTML content
+ * Send Email - يدعم Mailtrap و Ethereal و Gmail
  */
 const sendEmail = async (options) => {
-  const isDevelopment = process.env.NODE_ENV === 'development';
-
   try {
-    // Validate required fields
+    // Validate
     if (!options.email || !options.subject) {
       throw new Error('Email and subject are required');
     }
 
-    let result;
+    let transporter;
+    let previewUrl = null;
 
-    // 🧪 Development Mode: استخدام Mailtrap
-    if (isDevelopment && process.env.MAILTRAP_HOST) {
-      console.log('📧 [DEV] Sending via Mailtrap...');
+    // ==================== تحديد طريقة الإرسال ====================
+
+    // 1️⃣ إذا موجود Mailtrap credentials
+    if (process.env.MAILTRAP_USER && process.env.MAILTRAP_PASSWORD) {
+      console.log('📧 Using Mailtrap...');
       
-      const transporter = nodemailer.createTransport({
+      transporter = nodemailer.createTransport({
         host: process.env.MAILTRAP_HOST,
         port: parseInt(process.env.MAILTRAP_PORT),
         auth: {
@@ -35,57 +28,71 @@ const sendEmail = async (options) => {
           pass: process.env.MAILTRAP_PASSWORD,
         },
       });
-
-      result = await transporter.sendMail({
-        from: `"${process.env.FROM_NAME || 'E-shop'}" <no-reply@eshop.com>`,
-        to: options.email,
-        subject: options.subject,
-        text: options.message,
-        html: options.html || generateHTML(options),
-      });
-
-      console.log('✅ [DEV] Email sent to Mailtrap inbox');
-      console.log('   Message ID:', result.messageId);
-      console.log('   Preview: https://mailtrap.io/inboxes');
+    }
+    // 2️⃣ إذا موجود Gmail credentials
+    else if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
+      console.log('📧 Using Gmail...');
       
-      return result;
+      transporter = nodemailer.createTransport({
+        service: 'gmail',
+        host: process.env.EMAIL_HOST,
+        port: parseInt(process.env.EMAIL_PORT),
+        secure: true,
+        auth: {
+          user: process.env.EMAIL_USER,
+          pass: process.env.EMAIL_PASSWORD,
+        },
+      });
+    }
+    // 3️⃣ استخدام Ethereal (تلقائي - بدون إعداد)
+    else {
+      console.log('📧 Using Ethereal (auto-generated test account)...');
+      
+      const testAccount = await nodemailer.createTestAccount();
+      
+      transporter = nodemailer.createTransport({
+        host: 'smtp.ethereal.email',
+        port: 587,
+        secure: false,
+        auth: {
+          user: testAccount.user,
+          pass: testAccount.pass,
+        },
+      });
     }
 
-    // 🚀 Production Mode: استخدام Resend
-    console.log('📧 [PROD] Sending via Resend...');
-    
-    if (!process.env.RESEND_API_KEY) {
-      throw new Error('RESEND_API_KEY is not configured');
-    }
+    // ==================== إرسال الإيميل ====================
 
-    const resend = new Resend(process.env.RESEND_API_KEY);
-
-    const emailData = {
-      from: `${process.env.FROM_NAME || 'E-shop'} <${process.env.FROM_EMAIL || 'onboarding@resend.dev'}>`,
+    const info = await transporter.sendMail({
+      from: `"${process.env.FROM_NAME || 'E-shop'}" <noreply@eshop.com>`,
       to: options.email,
       subject: options.subject,
       text: options.message,
       html: options.html || generateHTML(options),
-    };
+    });
 
-    const { data, error } = await resend.emails.send(emailData);
+    // ==================== النتيجة ====================
 
-    if (error) {
-      console.error('❌ Resend Error:', error);
-      throw new Error(error.message || 'Failed to send email via Resend');
+    console.log('✅ Email sent successfully!');
+    console.log('   Message ID:', info.messageId);
+    console.log('   To:', options.email);
+
+    // Ethereal preview URL
+    previewUrl = nodemailer.getTestMessageUrl(info);
+    if (previewUrl) {
+      console.log('   Preview URL:', previewUrl);
+      console.log('   👆 Open this link to see the email');
     }
 
-    console.log('✅ [PROD] Email sent via Resend');
-    console.log('   Email ID:', data.id);
-    console.log('   Recipient:', options.email);
-
-    return data;
+    return {
+      messageId: info.messageId,
+      previewUrl,
+    };
 
   } catch (error) {
     console.error('❌ Email sending failed:', {
-      mode: isDevelopment ? 'Development' : 'Production',
       error: error.message,
-      recipient: options.email,
+      to: options.email,
       subject: options.subject,
     });
 
@@ -108,9 +115,13 @@ function generateHTML(options) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${subject}</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    * { 
+      margin: 0; 
+      padding: 0; 
+      box-sizing: border-box; 
+    }
     body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       padding: 40px 20px;
       line-height: 1.6;
@@ -119,7 +130,7 @@ function generateHTML(options) {
       max-width: 600px;
       margin: 0 auto;
       background: #ffffff;
-      border-radius: 16px;
+      border-radius: 20px;
       overflow: hidden;
       box-shadow: 0 20px 60px rgba(0,0,0,0.3);
     }
@@ -129,76 +140,162 @@ function generateHTML(options) {
       padding: 40px 30px;
       text-align: center;
     }
-    .logo { font-size: 48px; margin-bottom: 10px; }
-    .header h1 { font-size: 28px; margin: 0; }
-    .content { padding: 40px 30px; color: #333; }
-    .content h2 { color: #667eea; margin-bottom: 20px; font-size: 24px; }
+    .logo { 
+      font-size: 56px; 
+      margin-bottom: 15px;
+      animation: bounce 2s infinite;
+    }
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+    .header h1 { 
+      font-size: 32px; 
+      margin: 0;
+      font-weight: 700;
+    }
+    .content { 
+      padding: 40px 30px; 
+      color: #333; 
+    }
+    .content h2 { 
+      color: #667eea; 
+      margin-bottom: 20px; 
+      font-size: 26px;
+      font-weight: 700;
+    }
+    .greeting {
+      font-size: 18px;
+      margin-bottom: 20px;
+      color: #555;
+    }
     .reset-code {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
-      font-size: 36px;
+      font-size: 42px;
       font-weight: bold;
-      padding: 20px;
+      padding: 25px;
       text-align: center;
-      border-radius: 12px;
-      letter-spacing: 12px;
+      border-radius: 15px;
+      letter-spacing: 15px;
       margin: 30px 0;
-      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+      box-shadow: 0 10px 30px rgba(102, 126, 234, 0.5);
       font-family: 'Courier New', monospace;
     }
     .info-box {
       background: #fff3cd;
-      border: 1px solid #ffc107;
+      border-left: 4px solid #ffc107;
       border-radius: 8px;
-      padding: 15px;
-      margin: 20px 0;
+      padding: 20px;
+      margin: 25px 0;
       color: #856404;
+      font-size: 15px;
+    }
+    .info-box strong {
+      color: #664d03;
     }
     .footer {
-      background: #f8f9fa;
+      background: linear-gradient(to bottom, #f8f9fa, #e9ecef);
       padding: 30px;
       text-align: center;
       color: #6c757d;
       font-size: 14px;
     }
+    .footer-brand {
+      font-size: 18px;
+      font-weight: bold;
+      color: #667eea;
+      margin-bottom: 10px;
+    }
     .divider {
-      height: 1px;
-      background: linear-gradient(to left, transparent, #ddd, transparent);
+      height: 2px;
+      background: linear-gradient(to left, transparent, #667eea, transparent);
       margin: 30px 0;
+    }
+    .warning {
+      color: #dc3545;
+      font-weight: bold;
+      margin-top: 25px;
+      font-size: 16px;
+    }
+    .warning-text {
+      background: #f8d7da;
+      border-left: 4px solid #dc3545;
+      padding: 15px;
+      margin-top: 10px;
+      border-radius: 8px;
+      color: #721c24;
+      font-size: 14px;
+    }
+    @media only screen and (max-width: 600px) {
+      .content { padding: 30px 20px; }
+      .reset-code { 
+        font-size: 32px; 
+        letter-spacing: 10px; 
+        padding: 20px;
+      }
+      .header h1 { font-size: 24px; }
+      .logo { font-size: 48px; }
     }
   </style>
 </head>
 <body>
   <div class="container">
+    <!-- Header -->
     <div class="header">
       <div class="logo">🛍️</div>
       <h1>E-shop</h1>
     </div>
+    
+    <!-- Content -->
     <div class="content">
       <h2>${subject}</h2>
+      
       ${resetCode ? `
-        <p>مرحباً،</p>
-        <p>تلقينا طلباً لإعادة تعيين كلمة المرور الخاصة بحسابك.</p>
+        <p class="greeting">مرحباً،</p>
+        <p>تلقينا طلباً لإعادة تعيين كلمة المرور الخاصة بحسابك في E-shop.</p>
+        
         <div class="reset-code">${resetCode}</div>
+        
         <div class="info-box">
-          ⏰ هذا الرمز صالح لمدة <strong>10 دقائق فقط</strong>
+          ⏰ <strong>مهم:</strong> هذا الرمز صالح لمدة <strong>10 دقائق فقط</strong>
         </div>
-        <p>أدخل هذا الرمز في صفحة إعادة تعيين كلمة المرور.</p>
-        <div class="divider"></div>
-        <p style="color: #dc3545; font-weight: bold;">⚠️ تحذير أمني:</p>
-        <p style="font-size: 14px; color: #6c757d;">
-          إذا لم تطلب إعادة تعيين كلمة المرور، يرجى تجاهل هذا البريد.
+        
+        <p style="font-size: 16px; line-height: 1.8;">
+          أدخل هذا الرمز في صفحة إعادة تعيين كلمة المرور لإكمال العملية.
         </p>
+        
+        <div class="divider"></div>
+        
+        <p class="warning">⚠️ تحذير أمني</p>
+        <div class="warning-text">
+          إذا لم تطلب إعادة تعيين كلمة المرور، يرجى تجاهل هذا البريد الإلكتروني.
+          حسابك آمن ولن يتم إجراء أي تغييرات.
+        </div>
       ` : `
-        <p style="white-space: pre-line;">${message}</p>
+        <p style="white-space: pre-line; font-size: 16px; line-height: 1.8;">${message}</p>
       `}
+      
       <div class="divider"></div>
-      <p style="font-size: 14px; color: #6c757d;">شكراً لاستخدامك E-shop 💙</p>
+      
+      <p style="font-size: 15px; color: #6c757d; text-align: center;">
+        شكراً لاستخدامك E-shop 💙
+      </p>
     </div>
+    
+    <!-- Footer -->
     <div class="footer">
-      <p><strong>فريق E-shop</strong></p>
-      <p style="font-size: 12px; margin-top: 15px;">
+      <div class="footer-brand">فريق E-shop</div>
+      <p style="margin: 10px 0;">
+        <a href="mailto:support@eshop.com" style="color: #667eea; text-decoration: none;">
+          support@eshop.com
+        </a>
+      </p>
+      <p style="font-size: 13px; margin-top: 15px; color: #868e96;">
         © ${new Date().getFullYear()} E-shop. جميع الحقوق محفوظة.
+      </p>
+      <p style="font-size: 12px; color: #adb5bd; margin-top: 10px;">
+        هذا بريد إلكتروني آلي، الرجاء عدم الرد عليه.
       </p>
     </div>
   </div>
