@@ -13,20 +13,53 @@ const resend = new Resend(process.env.RESEND_API_KEY);
  * @param {string} [options.html] - Optional HTML content
  */
 const sendEmail = async (options) => {
+  const isDevelopment = process.env.NODE_ENV === 'development';
+
   try {
     // Validate required fields
     if (!options.email || !options.subject) {
       throw new Error('Email and subject are required');
     }
 
-    // Validate Resend API Key
-    if (!process.env.RESEND_API_KEY) {
-      throw new Error('RESEND_API_KEY is not configured in environment variables');
+    let result;
+
+    // 🧪 Development Mode: استخدام Mailtrap
+    if (isDevelopment && process.env.MAILTRAP_HOST) {
+      console.log('📧 [DEV] Sending via Mailtrap...');
+      
+      const transporter = nodemailer.createTransport({
+        host: process.env.MAILTRAP_HOST,
+        port: parseInt(process.env.MAILTRAP_PORT),
+        auth: {
+          user: process.env.MAILTRAP_USER,
+          pass: process.env.MAILTRAP_PASSWORD,
+        },
+      });
+
+      result = await transporter.sendMail({
+        from: `"${process.env.FROM_NAME || 'E-shop'}" <no-reply@eshop.com>`,
+        to: options.email,
+        subject: options.subject,
+        text: options.message,
+        html: options.html || generateHTML(options),
+      });
+
+      console.log('✅ [DEV] Email sent to Mailtrap inbox');
+      console.log('   Message ID:', result.messageId);
+      console.log('   Preview: https://mailtrap.io/inboxes');
+      
+      return result;
     }
 
-    console.log('📧 Attempting to send email to:', options.email);
+    // 🚀 Production Mode: استخدام Resend
+    console.log('📧 [PROD] Sending via Resend...');
+    
+    if (!process.env.RESEND_API_KEY) {
+      throw new Error('RESEND_API_KEY is not configured');
+    }
 
-    // Prepare email data
+    const resend = new Resend(process.env.RESEND_API_KEY);
+
     const emailData = {
       from: `${process.env.FROM_NAME || 'E-shop'} <${process.env.FROM_EMAIL || 'onboarding@resend.dev'}>`,
       to: options.email,
@@ -35,38 +68,36 @@ const sendEmail = async (options) => {
       html: options.html || generateHTML(options),
     };
 
-    // Send email via Resend
     const { data, error } = await resend.emails.send(emailData);
 
     if (error) {
-      console.error('❌ Resend API Error:', error);
-      throw new Error(error.message || 'Failed to send email');
+      console.error('❌ Resend Error:', error);
+      throw new Error(error.message || 'Failed to send email via Resend');
     }
 
-    console.log('✅ Email sent successfully');
+    console.log('✅ [PROD] Email sent via Resend');
     console.log('   Email ID:', data.id);
     console.log('   Recipient:', options.email);
-    
+
     return data;
 
   } catch (error) {
     console.error('❌ Email sending failed:', {
+      mode: isDevelopment ? 'Development' : 'Production',
       error: error.message,
       recipient: options.email,
       subject: options.subject,
     });
-    
-    throw new Error('There is an error in sending email');
+
+    throw new Error(`Failed to send email: ${error.message}`);
   }
 };
 
 /**
- * Generate beautiful HTML email template
+ * Generate HTML Email Template
  */
 function generateHTML(options) {
   const { message, subject } = options;
-  
-  // Extract reset code if exists (6 digits)
   const resetCode = message.match(/\d{6}/)?.[0];
 
   return `
@@ -98,31 +129,10 @@ function generateHTML(options) {
       padding: 40px 30px;
       text-align: center;
     }
-    .logo {
-      font-size: 48px;
-      margin-bottom: 10px;
-    }
-    .header h1 {
-      font-size: 28px;
-      margin: 0;
-    }
-    .content {
-      padding: 40px 30px;
-      color: #333;
-    }
-    .content h2 {
-      color: #667eea;
-      margin-bottom: 20px;
-      font-size: 24px;
-    }
-    .message {
-      background: #f8f9ff;
-      padding: 20px;
-      border-radius: 8px;
-      border-right: 4px solid #667eea;
-      margin: 20px 0;
-      white-space: pre-line;
-    }
+    .logo { font-size: 48px; margin-bottom: 10px; }
+    .header h1 { font-size: 28px; margin: 0; }
+    .content { padding: 40px 30px; color: #333; }
+    .content h2 { color: #667eea; margin-bottom: 20px; font-size: 24px; }
     .reset-code {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
@@ -151,18 +161,10 @@ function generateHTML(options) {
       color: #6c757d;
       font-size: 14px;
     }
-    .footer a {
-      color: #667eea;
-      text-decoration: none;
-    }
     .divider {
       height: 1px;
       background: linear-gradient(to left, transparent, #ddd, transparent);
       margin: 30px 0;
-    }
-    @media only screen and (max-width: 600px) {
-      .content { padding: 30px 20px; }
-      .reset-code { font-size: 28px; letter-spacing: 8px; }
     }
   </style>
 </head>
@@ -172,50 +174,31 @@ function generateHTML(options) {
       <div class="logo">🛍️</div>
       <h1>E-shop</h1>
     </div>
-    
     <div class="content">
       <h2>${subject}</h2>
-      
       ${resetCode ? `
         <p>مرحباً،</p>
-        <p>تلقينا طلباً لإعادة تعيين كلمة المرور الخاصة بحسابك في E-shop.</p>
-        
+        <p>تلقينا طلباً لإعادة تعيين كلمة المرور الخاصة بحسابك.</p>
         <div class="reset-code">${resetCode}</div>
-        
         <div class="info-box">
           ⏰ هذا الرمز صالح لمدة <strong>10 دقائق فقط</strong>
         </div>
-        
-        <p>أدخل هذا الرمز في صفحة إعادة تعيين كلمة المرور لإكمال العملية.</p>
-        
+        <p>أدخل هذا الرمز في صفحة إعادة تعيين كلمة المرور.</p>
         <div class="divider"></div>
-        
         <p style="color: #dc3545; font-weight: bold;">⚠️ تحذير أمني:</p>
         <p style="font-size: 14px; color: #6c757d;">
-          إذا لم تطلب إعادة تعيين كلمة المرور، يرجى تجاهل هذا البريد الإلكتروني.
-          حسابك آمن ولن يتم إجراء أي تغييرات.
+          إذا لم تطلب إعادة تعيين كلمة المرور، يرجى تجاهل هذا البريد.
         </p>
       ` : `
-        <div class="message">${message}</div>
+        <p style="white-space: pre-line;">${message}</p>
       `}
-      
       <div class="divider"></div>
-      
-      <p style="font-size: 14px; color: #6c757d;">
-        شكراً لاستخدامك E-shop 💙
-      </p>
+      <p style="font-size: 14px; color: #6c757d;">شكراً لاستخدامك E-shop 💙</p>
     </div>
-    
     <div class="footer">
       <p><strong>فريق E-shop</strong></p>
-      <p style="margin: 10px 0;">
-        <a href="mailto:support@eshop.com">support@eshop.com</a>
-      </p>
       <p style="font-size: 12px; margin-top: 15px;">
         © ${new Date().getFullYear()} E-shop. جميع الحقوق محفوظة.
-      </p>
-      <p style="font-size: 11px; color: #adb5bd; margin-top: 10px;">
-        هذا البريد الإلكتروني تم إرساله من نظام آلي، الرجاء عدم الرد عليه.
       </p>
     </div>
   </div>
