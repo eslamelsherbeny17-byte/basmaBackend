@@ -7,6 +7,7 @@ const {
   updateOrderToPaid,
   updateOrderToDelivered,
   checkoutSession,
+  updateOrderStatus, // ✅ إضافة الدالة هنا
 } = require('../services/orderService');
 
 const authService = require('../services/authService');
@@ -22,12 +23,14 @@ router.get(
 );
 
 router.route('/:cartId').post(authService.allowedTo('user'), createCashOrder);
+
 router.get(
   '/',
   authService.allowedTo('user', 'admin', 'manager'),
   filterOrderForLoggedUser,
   findAllOrders
 );
+
 router.get('/:id', findSpecificOrder);
 
 router.put(
@@ -35,10 +38,18 @@ router.put(
   authService.allowedTo('admin', 'manager'),
   updateOrderToPaid
 );
+
 router.put(
   '/:id/deliver',
   authService.allowedTo('admin', 'manager'),
   updateOrderToDelivered
 );
-router.put('/:id/status', authService.protect, authService.allowedTo('admin', 'manager'), orderService.updateOrderStatus);
+
+// ✅ استخدام الدالة مباشرة هنا
+router.put(
+  '/:id/status',
+  authService.allowedTo('admin', 'manager'),
+  updateOrderStatus
+);
+
 module.exports = router;
