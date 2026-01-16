@@ -96,7 +96,27 @@ exports.updateOrderToPaid = asyncHandler(async (req, res, next) => {
     .status(200)
     .json({ status: 200, message: "Order paid", data: updatedOrder });
 });
+// ✅ أضف هذه الدالة الجديدة لتحديث حالة الطلب
+// @desc    Update order status (pending, shipped, etc)
+// @route   PUT /api/v1/orders/:id/status
+// @access  Protected/Admin-Manager
+exports.updateOrderStatus = asyncHandler(async (req, res, next) => {
+  const order = await Order.findById(req.params.id);
+  if (!order) {
+    return next(new ApiError(`No order found with id ${req.params.id}`, 404));
+  }
 
+  order.status = req.body.status;
+  
+  // تحديث الحقول المساعدة تلقائياً
+  if (req.body.status === 'delivered') {
+    order.isDelivered = true;
+    order.deliveredAt = Date.now();
+  }
+
+  const updatedOrder = await order.save();
+  res.status(200).json({ status: 200, data: updatedOrder });
+});
 // @desc    Update order delivered status
 // @route   PUT /api/v1/orders/:id/deliver
 // @access  Protected/Admin-Manager
@@ -267,152 +287,3 @@ exports.webhookCheckout = asyncHandler(async (req, res, next) => {
     .json({ status: 200, message: "Checkout session created", received: true });
 });
 
-// const createCardOrder = async (session) => {
-//   const cartId = session.client_reference_id;
-//   const shippingAddress = session.metadata;
-//   const oderPrice = session.amount_total / 100;
-
-//   const cart = await Cart.findById(cartId);
-//   const user = await User.findOne({ email: session.customer_email });
-
-//   // 3) Create order with default paymentMethodType card
-//   const order = await Order.create({
-//     user: user._id,
-//     cartItems: cart.cartItems,
-//     shippingAddress,
-//     totalOrderPrice: oderPrice,
-//     isPaid: true,
-//     paidAt: Date.now(),
-//     paymentMethodType: "card",
-//   });
-
-//   // 4) After creating order, decrement product quantity, increment product sold
-//   if (order) {
-//     const bulkOption = cart.cartItems.map((item) => ({
-//       updateOne: {
-//         filter: { _id: item.product },
-//         update: { $inc: { quantity: -item.quantity, sold: +item.quantity } },
-//       },
-//     }));
-//     await Product.bulkWrite(bulkOption, {});
-
-//     // 5) Clear cart depend on cartId
-//     await Cart.findByIdAndDelete(cartId);
-//   }
-// };
-
-// // @desc    This webhook will run when stripe payment success paid
-// // @route   POST /webhook-checkout
-// // @access  Protected/User
-// exports.webhookCheckout = asyncHandler(async (req, res, next) => {
-//   console.log(req.body);
-
-//   console.log(
-//     "tgggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg"
-//   );
-//   const sig = req.headers["stripe-signature"];
-
-//   let event;
-
-//   try {
-//     event = stripe.webhooks.constructEvent(
-//       req.body,
-//       sig,
-//       process.env.STRIPE_WEBHOOK_SECRET
-//     );
-//   } catch (err) {
-//     return res.status(400).send(`Webhook Error: ${err.message}`);
-//   }
-//   if (event.type === "checkout.session.completed") {
-//     //  Create order
-//     createCardOrder(event.data.object);
-//   }
-
-//   res.status(200).json({ received: true });
-// });
-// const createCardOrder = async (session, next) => {
-//   try {
-//     // Log session data for debugging
-//     console.log("Session data:", JSON.stringify(session, null, 2));
-
-//     // Extract necessary data from the session
-//     const cartId = session.client_reference_id;
-//     const shippingAddress = session.metadata;
-//     const orderPrice = session.amount_total / 100;
-//     const customerEmail = session.customer_email;
-
-//     // Validate critical data
-//     if (!cartId || !customerEmail) {
-//       console.error("Missing necessary data: cartId or customerEmail");
-//       return next(
-//         new ApiError("Invalid session data: cartId or email is missing", 400)
-//       );
-//     }
-
-//     console.log(`Cart ID: ${cartId}, Customer Email: ${customerEmail}`);
-
-//     // Fetch the cart by ID
-//     const cart = await Cart.findOne({ _id: cartId });
-//     if (!cart) {
-//       console.error(`Cart not found with ID: ${cartId}`);
-//       return next(new ApiError(`Cart not found with ID: ${cartId}`, 404));
-//     }
-//     console.log("Cart found:", cart);
-
-//     // Fetch the user by email
-//     const user = await User.findOne({ email: customerEmail });
-//     if (!user) {
-//       console.error(`User not found with email: ${customerEmail}`);
-//       return next(
-//         new ApiError(`User not found with email: ${customerEmail}`, 404)
-//       );
-//     }
-//     console.log("User found:", user);
-
-//     // Log the shipping address for verification
-//     console.log("Shipping address:", shippingAddress);
-
-//     // Create the order
-//     const order = await Order.create({
-//       user: user._id,
-//       cartItems: cart.cartItems,
-//       shippingAddress,
-//       totalOrderPrice: orderPrice,
-//       isPaid: true,
-//       paidAt: Date.now(),
-//       paymentMethodType: "Card",
-//     });
-
-//     if (!order) {
-//       console.error("Order creation failed");
-//       return next(new ApiError("Failed to create order", 500));
-//     }
-//     console.log("Order created:", order);
-
-//     // Update product inventory and sales
-//     const bulkOption = cart.cartItems.map((item) => ({
-//       updateOne: {
-//         filter: { _id: item.product },
-//         update: { $inc: { quantity: -item.quantity, sold: +item.quantity } },
-//       },
-//     }));
-
-//     // Execute bulk write
-//     const bulkResult = await Product.bulkWrite(bulkOption);
-//     console.log("Bulk write result:", bulkResult);
-
-//     // Clear the cart
-//     await Cart.findByIdAndDelete(cartId);
-//     console.log(`Cart with ID: ${cartId} deleted successfully`);
-
-//     console.log("Order processing completed successfully.");
-//   } catch (error) {
-//     // Log the full error stack for debugging
-//     console.error("Error creating order:", error.message, error.stack);
-
-//     // Pass the error to the next middleware
-//     return next(
-//       new ApiError("An error occurred while processing the order", 500)
-//     );
-//   }
-// };

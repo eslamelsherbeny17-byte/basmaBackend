@@ -18,39 +18,30 @@ const orderSchema = new mongoose.Schema(
         price: Number,
       },
     ],
-
-    taxPrice: {
-      type: Number,
-      default: 0,
-    },
+    taxPrice: { type: Number, default: 0 },
     shippingAddress: {
       details: String,
       phone: String,
       city: String,
       postalCode: String,
     },
-    shippingPrice: {
-      type: Number,
-      default: 0,
-    },
-    totalOrderPrice: {
-      type: Number,
-    },
+    shippingPrice: { type: Number, default: 0 },
+    totalOrderPrice: { type: Number },
     paymentMethodType: {
       type: String,
       enum: ["Card", "cash"],
       default: "cash",
     },
-    isPaid: {
-      type: Boolean,
-      default: false,
-    },
+    isPaid: { type: Boolean, default: false },
     paidAt: Date,
-    isDelivered: {
-      type: Boolean,
-      default: false,
-    },
+    isDelivered: { type: Boolean, default: false },
     deliveredAt: Date,
+    // ✅ إضافة حقل الحالة الجديد
+    status: {
+      type: String,
+      enum: ['pending', 'processing', 'shipped', 'delivered', 'cancelled'],
+      default: 'pending'
+    }
   },
   { timestamps: true }
 );
@@ -63,11 +54,7 @@ orderSchema.pre(/^find/, function (next) {
     path: "cartItems.product",
     select: "title imageCover ",
   });
-
   next();
 });
 
 module.exports = mongoose.model("Order", orderSchema);
-
-// In@in2016
-//progahmedelsayed@gmail.com
