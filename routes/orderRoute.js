@@ -40,5 +40,5 @@ router.put(
   authService.allowedTo('admin', 'manager'),
   updateOrderToDelivered
 );
-
+router.put('/:id/status', authService.protect, authService.allowedTo('admin', 'manager'), orderService.updateOrderStatus);
 module.exports = router;
